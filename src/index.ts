@@ -11,12 +11,7 @@ const PANEL_URL =
   process.env.ADMIN_PANEL_URL?.replace(/\/$/, '') || 'http://localhost:5173';
 
 const MAX_MSG = 4000;
-
-function todayRange(): { from: string; to: string } {
-  const d = new Date();
-  const s = d.toISOString().slice(0, 10);
-  return { from: s, to: s };
-}
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function parseReportArgs(
   parts: string[],
@@ -51,13 +46,42 @@ async function fetchReport(
   return data.text;
 }
 
-async function fetchBalance(): Promise<string> {
+async function fetchExpenseDay(date?: string): Promise<string> {
   if (!BOT_SECRET) throw new Error('BOT_API_SECRET is not set');
   const { data } = await axios.get<{ text: string }>(
-    `${API_BASE}/internal/bot/balance`,
+    `${API_BASE}/internal/bot/expense`,
     {
+      params: date && DATE_RE.test(date) ? { date } : {},
       headers: { Authorization: `Bearer ${BOT_SECRET}` },
       timeout: 60_000,
+    },
+  );
+  return data.text;
+}
+
+async function fetchUserExpenseNet(tokens: string[]): Promise<string> {
+  if (!BOT_SECRET) throw new Error('BOT_API_SECRET is not set');
+  const { data } = await axios.get<{ text: string }>(
+    `${API_BASE}/internal/bot/userinfo`,
+    {
+      params:
+        tokens.length > 0 ? { users: tokens.join(',') } : {},
+      headers: { Authorization: `Bearer ${BOT_SECRET}` },
+      timeout: 120_000,
+    },
+  );
+  return data.text;
+}
+
+async function fetchClientExpenseNet(tokens: string[]): Promise<string> {
+  if (!BOT_SECRET) throw new Error('BOT_API_SECRET is not set');
+  const { data } = await axios.get<{ text: string }>(
+    `${API_BASE}/internal/bot/clientinfo`,
+    {
+      params:
+        tokens.length > 0 ? { clients: tokens.join(',') } : {},
+      headers: { Authorization: `Bearer ${BOT_SECRET}` },
+      timeout: 120_000,
     },
   );
   return data.text;
@@ -93,27 +117,6 @@ async function main() {
     });
   });
 
-  bot.command('info', async (ctx) => {
-    if (!isStatsChat(ctx.chat?.id, ctx.chat?.type)) {
-      await ctx.reply(
-        'Эта команда доступна только в настроенной рабочей группе (см. TELEGRAM_GROUP_ID).',
-      );
-      return;
-    }
-    const parts = (ctx.message?.text ?? '').split(/\s+/).slice(1);
-    const client = parts.join(' ').trim() || undefined;
-    const { from, to } = todayRange();
-    try {
-      const text = truncate(await fetchReport(from, to, client));
-      await ctx.reply(text);
-    } catch (e) {
-      console.error(e);
-      await ctx.reply(
-        `Ошибка: ${e instanceof Error ? e.message : String(e)}`,
-      );
-    }
-  });
-
   bot.command('report', async (ctx) => {
     if (!isStatsChat(ctx.chat?.id, ctx.chat?.type)) {
       await ctx.reply(
@@ -140,15 +143,62 @@ async function main() {
     }
   });
 
-  bot.command('balance', async (ctx) => {
+  /** Net extra expenses (KGS) for one day. Optional: /expense YYYY-MM-DD */
+  bot.command('expense', async (ctx) => {
     if (!isStatsChat(ctx.chat?.id, ctx.chat?.type)) {
       await ctx.reply(
         'Эта команда доступна только в настроенной рабочей группе.',
       );
       return;
     }
+    const parts = (ctx.message?.text ?? '').split(/\s+/).slice(1);
+    const dateArg = parts[0]?.trim();
     try {
-      const text = truncate(await fetchBalance());
+      const text = truncate(
+        await fetchExpenseDay(
+          dateArg && DATE_RE.test(dateArg) ? dateArg : undefined,
+        ),
+      );
+      await ctx.reply(text);
+    } catch (e) {
+      console.error(e);
+      await ctx.reply(
+        `Ошибка: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  });
+
+  /** Net extra expenses saved by users (all dates). /userinfo alice bob — omit args for all */
+  bot.command('userinfo', async (ctx) => {
+    if (!isStatsChat(ctx.chat?.id, ctx.chat?.type)) {
+      await ctx.reply(
+        'Эта команда доступна только в настроенной рабочей группе.',
+      );
+      return;
+    }
+    const parts = (ctx.message?.text ?? '').split(/\s+/).slice(1);
+    try {
+      const text = truncate(await fetchUserExpenseNet(parts));
+      await ctx.reply(text);
+    } catch (e) {
+      console.error(e);
+      await ctx.reply(
+        `Ошибка: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  });
+
+  /** Net extra expenses by clients (all dates). /clientinfo Name1 Name2 — omit args for all */
+  bot.command('clientinfo', async (ctx) => {
+    if (!isStatsChat(ctx.chat?.id, ctx.chat?.type)) {
+      await ctx.reply(
+        'Эта команда доступна только в настроенной рабочей группе.',
+      );
+      return;
+    }
+    const parts = (ctx.message?.text ?? '').split(/\s+/).slice(1);
+    try {
+      const text = truncate(await fetchClientExpenseNet(parts));
       await ctx.reply(text);
     } catch (e) {
       console.error(e);
