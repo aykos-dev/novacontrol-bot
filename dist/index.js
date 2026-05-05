@@ -8,26 +8,31 @@ const API_BASE = process.env.API_BASE_URL?.replace(/\/$/, '') || 'http://localho
 const PANEL_URL = process.env.ADMIN_PANEL_URL?.replace(/\/$/, '') || 'http://localhost:5173';
 const MAX_MSG = 4000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-function parseReportArgs(parts) {
-    if (parts.length < 2) {
-        return {
-            error: 'Формат: /report YYYY-MM-DD YYYY-MM-DD [имя клиента]\nПример: /report 2026-04-01 2026-04-21',
-        };
-    }
-    const dateFrom = parts[0];
-    const dateTo = parts[1];
-    const re = /^\d{4}-\d{2}-\d{2}$/;
-    if (!re.test(dateFrom) || !re.test(dateTo)) {
-        return { error: 'Даты должны быть в формате YYYY-MM-DD.' };
-    }
-    const rest = parts.slice(2).join(' ').trim();
-    return { dateFrom, dateTo, client: rest || undefined };
-}
-async function fetchReport(dateFrom, dateTo, client) {
+async function fetchReport(date) {
     if (!BOT_SECRET)
         throw new Error('BOT_API_SECRET is not set');
     const { data } = await axios.get(`${API_BASE}/internal/bot/report`, {
-        params: { dateFrom, dateTo, client },
+        params: date && DATE_RE.test(date) ? { date } : {},
+        headers: { Authorization: `Bearer ${BOT_SECRET}` },
+        timeout: 120_000,
+    });
+    return data.text;
+}
+async function fetchBalance(date) {
+    if (!BOT_SECRET)
+        throw new Error('BOT_API_SECRET is not set');
+    const { data } = await axios.get(`${API_BASE}/internal/bot/balance`, {
+        params: date && DATE_RE.test(date) ? { date } : {},
+        headers: { Authorization: `Bearer ${BOT_SECRET}` },
+        timeout: 120_000,
+    });
+    return data.text;
+}
+async function fetchViruchka(date) {
+    if (!BOT_SECRET)
+        throw new Error('BOT_API_SECRET is not set');
+    const { data } = await axios.get(`${API_BASE}/internal/bot/viruchka`, {
+        params: date && DATE_RE.test(date) ? { date } : {},
         headers: { Authorization: `Bearer ${BOT_SECRET}` },
         timeout: 120_000,
     });
@@ -97,13 +102,41 @@ async function main() {
             return;
         }
         const parts = (ctx.message?.text ?? '').split(/\s+/).slice(1);
-        const parsed = parseReportArgs(parts);
-        if ('error' in parsed) {
-            await ctx.reply(parsed.error);
+        const dateArg = parts[0]?.trim();
+        try {
+            const text = truncate(await fetchReport(dateArg && DATE_RE.test(dateArg) ? dateArg : undefined));
+            await ctx.reply(text);
+        }
+        catch (e) {
+            console.error(e);
+            await ctx.reply(`Ошибка: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    });
+    bot.command('balance', async (ctx) => {
+        if (!isStatsChat(ctx.chat?.id, ctx.chat?.type)) {
+            await ctx.reply('Эта команда доступна только в настроенной рабочей группе.');
             return;
         }
+        const parts = (ctx.message?.text ?? '').split(/\s+/).slice(1);
+        const dateArg = parts[0]?.trim();
         try {
-            const text = truncate(await fetchReport(parsed.dateFrom, parsed.dateTo, parsed.client));
+            const text = truncate(await fetchBalance(dateArg && DATE_RE.test(dateArg) ? dateArg : undefined));
+            await ctx.reply(text);
+        }
+        catch (e) {
+            console.error(e);
+            await ctx.reply(`Ошибка: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    });
+    bot.command('viruchka', async (ctx) => {
+        if (!isStatsChat(ctx.chat?.id, ctx.chat?.type)) {
+            await ctx.reply('Эта команда доступна только в настроенной рабочей группе.');
+            return;
+        }
+        const parts = (ctx.message?.text ?? '').split(/\s+/).slice(1);
+        const dateArg = parts[0]?.trim();
+        try {
+            const text = truncate(await fetchViruchka(dateArg && DATE_RE.test(dateArg) ? dateArg : undefined));
             await ctx.reply(text);
         }
         catch (e) {
