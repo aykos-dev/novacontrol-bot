@@ -11,7 +11,7 @@ const PANEL_URL =
   process.env.ADMIN_PANEL_URL?.replace(/\/$/, '') || 'http://localhost:5173';
 
 const MAX_MSG = 4000;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_RE = /^\d{2}-\d{2}-\d{4}$/;
 
 async function fetchReport(date?: string): Promise<string> {
   if (!BOT_SECRET) throw new Error('BOT_API_SECRET is not set');
@@ -190,7 +190,7 @@ async function main() {
     }
   });
 
-  /** Net extra expenses (KGS) for one day. Optional: /expense YYYY-MM-DD */
+  /** Net extra expenses (KGS) for one day. Optional: /expense DD-MM-YYYY */
   bot.command('expense', async (ctx) => {
     if (!isStatsChat(ctx.chat?.id, ctx.chat?.type)) {
       await ctx.reply(
